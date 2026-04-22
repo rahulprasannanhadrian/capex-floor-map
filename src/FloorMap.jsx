@@ -57,6 +57,8 @@ export default function FloorMap() {
   const [showGridConfig, setShowGridConfig] = useState(false);
   const [tmpRows, setTmpRows] = useState(data.rows);
   const [tmpCols, setTmpCols] = useState(data.cols);
+  const [tooltip, setTooltip] = useState(null); // { loc, x, y }
+  const gridContainerRef = useRef(null);
 
   // Check URL for edit mode access
   useEffect(() => {
@@ -388,8 +390,8 @@ export default function FloorMap() {
         </div>
 
         {/* Grid */}
-        <div style={{ flex: 1, overflow: "auto", padding: 20 }}>
-          <div onMouseUp={handleMouseUp} onMouseLeave={() => { setSelecting(false); setHoveredBay(null); }} style={{ display: "inline-block", userSelect: "none" }}>
+        <div ref={gridContainerRef} style={{ flex: 1, overflow: "auto", padding: 20, position: "relative" }}>
+          <div onMouseUp={handleMouseUp} onMouseLeave={() => { setSelecting(false); setHoveredBay(null); setTooltip(null); }} style={{ display: "inline-block", userSelect: "none" }}>
             <div style={{ display: "flex", gap: GAP, marginLeft: 24 + GAP, marginBottom: GAP }}>
               {COLS.map(c => <div key={c} style={{ width: CELL, textAlign: "center", fontSize: 10, color: "#484f58", fontWeight: 600, fontFamily: "'DM Mono', monospace" }}>{c}</div>)}
             </div>
@@ -423,9 +425,16 @@ export default function FloorMap() {
                   return (
                     <div key={key}
                       onMouseDown={() => handleMouseDown(row, col)}
-                      onMouseEnter={() => handleMouseEnter(row, col)}
-                      onMouseLeave={handleMouseLeave}
-                      onClick={() => { if (mode === "view" && loc) setSelectedLocation(loc.id); }}
+                      onMouseEnter={(e) => {
+                        handleMouseEnter(row, col);
+                        if (mode === "view" && loc && !isFilt) {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const container = gridContainerRef.current?.getBoundingClientRect() || { left: 0, top: 0 };
+                          setTooltip({ loc, x: rect.left - container.left + CELL / 2, y: rect.top - container.top - 8 });
+                        }
+                      }}
+                      onMouseLeave={() => { handleMouseLeave(); setTooltip(null); }}
+                      onClick={() => { if (mode === "view" && loc) setSelectedLocation(loc.id); setTooltip(null); }}
                       style={{
                         width: CELL, height: CELL, borderRadius: 3,
                         background: isSel ? "#1f6feb33" : isFilt ? "#0d1117" : wa ? wa.bg : "#0d1117",
@@ -456,6 +465,87 @@ export default function FloorMap() {
             {Object.entries(REVIEW_COLORS).map(([k, v]) => <span key={k} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "#8b949e" }}><span style={{ width: 5, height: 5, borderRadius: "50%", background: v }} />{k}</span>)}
             <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "#8b949e", marginLeft: 8 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: "#1c0a0a", border: "1px dashed #f8514944" }} />Disabled</span>
           </div>
+
+          {/* Hover Tooltip */}
+          {tooltip && tooltip.loc && (
+            <div style={{
+              position: "absolute",
+              left: tooltip.x,
+              top: tooltip.y,
+              transform: "translate(-50%, -100%)",
+              background: "#1c2128",
+              border: `1px solid ${WORK_AREAS[tooltip.loc.workArea]?.color || "#30363d"}44`,
+              borderRadius: 8,
+              padding: "10px 14px",
+              minWidth: 200,
+              maxWidth: 280,
+              zIndex: 100,
+              pointerEvents: "none",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+            }}>
+              {/* Arrow */}
+              <div style={{
+                position: "absolute", bottom: -6, left: "50%", transform: "translateX(-50%)",
+                width: 12, height: 6, overflow: "hidden",
+              }}>
+                <div style={{
+                  width: 10, height: 10, background: "#1c2128",
+                  border: `1px solid ${WORK_AREAS[tooltip.loc.workArea]?.color || "#30363d"}44`,
+                  transform: "rotate(45deg)", position: "absolute", top: -6, left: 1,
+                }} />
+              </div>
+
+              {/* Header */}
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: WORK_AREAS[tooltip.loc.workArea]?.color, flexShrink: 0 }} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#e6edf3" }}>
+                  {tooltip.loc.cellName || WORK_AREAS[tooltip.loc.workArea]?.name}
+                </span>
+                {tooltip.loc.reviewStatus && (
+                  <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: REVIEW_COLORS[tooltip.loc.reviewStatus] + "22", color: REVIEW_COLORS[tooltip.loc.reviewStatus], fontWeight: 600 }}>
+                    {tooltip.loc.reviewStatus}
+                  </span>
+                )}
+              </div>
+
+              {/* Info row */}
+              <div style={{ fontSize: 11, color: "#8b949e", marginBottom: 4, fontFamily: "'DM Mono', monospace" }}>
+                {tooltip.loc.bayRange} · {tooltip.loc.bays.length} bays · {tooltip.loc.purpose}
+              </div>
+
+              {/* Commission status */}
+              <div style={{ fontSize: 10, color: "#484f58", marginBottom: 6 }}>
+                Commission: <span style={{ color: tooltip.loc.commissionStatus === "Active" ? "#22c55e" : "#f59e0b" }}>{tooltip.loc.commissionStatus}</span>
+              </div>
+
+              {/* Work Cell */}
+              {tooltip.loc.cellName && (
+                <div style={{ fontSize: 11, color: "#8b949e", marginBottom: 6 }}>
+                  Work Cell: <span style={{ color: "#e6edf3", fontWeight: 500 }}>{tooltip.loc.cellName}</span>
+                </div>
+              )}
+
+              {/* Equipment list */}
+              {tooltip.loc.equipment.length > 0 ? (
+                <div style={{ borderTop: "1px solid #21262d", paddingTop: 6, marginTop: 2 }}>
+                  <div style={{ fontSize: 9, color: "#484f58", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: 4 }}>
+                    Equipment ({tooltip.loc.equipment.length})
+                  </div>
+                  {tooltip.loc.equipment.map((eq, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "2px 0" }}>
+                      <span style={{ fontSize: 11, color: "#e6edf3" }}>{eq.name}</span>
+                      <span style={{ fontSize: 9, color: "#484f58", fontFamily: "'DM Mono', monospace" }}>{eq.id}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ fontSize: 10, color: "#30363d", fontStyle: "italic" }}>No equipment assigned</div>
+              )}
+
+              {/* Click hint */}
+              <div style={{ fontSize: 9, color: "#30363d", marginTop: 6, textAlign: "center" }}>Click for details</div>
+            </div>
+          )}
         </div>
 
         {/* Detail Panel */}
