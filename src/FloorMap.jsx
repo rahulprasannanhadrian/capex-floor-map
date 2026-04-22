@@ -35,9 +35,16 @@ const saveState = (data) => {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
 };
 
+const EDIT_PASSWORD = "capex2026";  // Change this to your preferred password
+
 export default function FloorMap() {
   const [data, setData] = useState(loadState);
   const [mode, setMode] = useState("view");
+  const [unlocked, setUnlocked] = useState(false);
+  const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
+  const [pendingMode, setPendingMode] = useState(null);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [passwordError, setPasswordError] = useState(false);
   const [selectedArea, setSelectedArea] = useState("WLD");
   const [selectedPurpose, setSelectedPurpose] = useState("RND");
   const [cellName, setCellName] = useState("");
@@ -50,6 +57,14 @@ export default function FloorMap() {
   const [showGridConfig, setShowGridConfig] = useState(false);
   const [tmpRows, setTmpRows] = useState(data.rows);
   const [tmpCols, setTmpCols] = useState(data.cols);
+
+  // Check URL for edit mode access
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("edit") === "true") {
+      setUnlocked(true);
+    }
+  }, []);
 
   const ROWS = makeRows(data.rows);
   const COLS = makeCols(data.cols);
@@ -178,6 +193,36 @@ export default function FloorMap() {
 
   const clearAllDisabled = () => setData(prev => ({ ...prev, disabled: {} }));
 
+  const tryEditMode = (targetMode) => {
+    if (unlocked) {
+      setMode(targetMode); setSelStart(null); setSelEnd(null); setSelectedLocation(null);
+    } else {
+      setPendingMode(targetMode);
+      setShowPasswordPrompt(true);
+      setPasswordInput("");
+      setPasswordError(false);
+    }
+  };
+
+  const submitPassword = () => {
+    if (passwordInput === EDIT_PASSWORD) {
+      setUnlocked(true);
+      setShowPasswordPrompt(false);
+      setPasswordInput("");
+      setPasswordError(false);
+      if (pendingMode) {
+        setMode(pendingMode); setSelStart(null); setSelEnd(null); setSelectedLocation(null);
+      }
+    } else {
+      setPasswordError(true);
+    }
+  };
+
+  const lockEditing = () => {
+    setUnlocked(false);
+    setMode("view");
+  };
+
   const resetAll = () => {
     if (confirm("Reset the entire floor map?")) {
       const fresh = defaultState();
@@ -212,14 +257,25 @@ export default function FloorMap() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-          {[["view", "👁 View"], ["assign", "✏️ Assign"], ["disable", "🚫 Shape"]].map(([m, label]) => (
-            <button key={m} onClick={() => { setMode(m); setSelStart(null); setSelEnd(null); if (m !== "view") setSelectedLocation(null); }} style={{
+          <button onClick={() => { setMode("view"); setSelStart(null); setSelEnd(null); }} style={{
+            ...B, background: mode === "view" ? "#1f6feb" : "#21262d",
+            color: mode === "view" ? "#fff" : "#8b949e", border: mode === "view" ? "1px solid #388bfd" : "1px solid #30363d",
+          }}>👁 View</button>
+          {[["assign", "✏️ Assign"], ["disable", "🚫 Shape"]].map(([m, label]) => (
+            <button key={m} onClick={() => tryEditMode(m)} style={{
               ...B, background: mode === m ? (m === "disable" ? "#da3633" : "#1f6feb") : "#21262d",
-              color: mode === m ? "#fff" : "#8b949e", border: mode === m ? `1px solid ${m === "disable" ? "#f85149" : "#388bfd"}` : "1px solid #30363d",
-            }}>{label}</button>
+              color: mode === m ? "#fff" : unlocked ? "#8b949e" : "#484f58",
+              border: mode === m ? `1px solid ${m === "disable" ? "#f85149" : "#388bfd"}` : "1px solid #30363d",
+              opacity: !unlocked && mode !== m ? 0.6 : 1,
+            }}>{label}{!unlocked && " 🔒"}</button>
           ))}
-          <button onClick={() => { setShowGridConfig(!showGridConfig); setTmpRows(data.rows); setTmpCols(data.cols); }} style={{ ...B, background: showGridConfig ? "#30363d" : "#21262d", color: "#8b949e", border: "1px solid #30363d" }}>⚙ Grid</button>
-          <button onClick={resetAll} style={{ ...B, background: "#21262d", color: "#f85149", border: "1px solid #30363d", fontSize: 11 }}>Reset</button>
+          {unlocked && (
+            <>
+              <button onClick={() => { setShowGridConfig(!showGridConfig); setTmpRows(data.rows); setTmpCols(data.cols); }} style={{ ...B, background: showGridConfig ? "#30363d" : "#21262d", color: "#8b949e", border: "1px solid #30363d" }}>⚙ Grid</button>
+              <button onClick={resetAll} style={{ ...B, background: "#21262d", color: "#f85149", border: "1px solid #30363d", fontSize: 11 }}>Reset</button>
+              <button onClick={lockEditing} style={{ ...B, background: "#21262d", color: "#f59e0b", border: "1px solid #30363d", fontSize: 11 }}>🔒 Lock</button>
+            </>
+          )}
         </div>
       </div>
 
@@ -416,13 +472,13 @@ export default function FloorMap() {
               <F l="Purpose" v={selLoc.purpose} />
               <div>
                 <label style={LBL}>Commission Status</label>
-                <select value={selLoc.commissionStatus} onChange={e => updateLocation(selLoc.id, { commissionStatus: e.target.value })} style={SEL}>
+                <select value={selLoc.commissionStatus} onChange={e => updateLocation(selLoc.id, { commissionStatus: e.target.value })} disabled={!unlocked} style={{ ...SEL, opacity: unlocked ? 1 : 0.6 }}>
                   {["Active", "Inactive", "Decommissioned"].map(s => <option key={s}>{s}</option>)}
                 </select>
               </div>
               <div>
                 <label style={LBL}>Location Review</label>
-                <select value={selLoc.reviewStatus || ""} onChange={e => updateLocation(selLoc.id, { reviewStatus: e.target.value || null })} style={SEL}>
+                <select value={selLoc.reviewStatus || ""} onChange={e => updateLocation(selLoc.id, { reviewStatus: e.target.value || null })} disabled={!unlocked} style={{ ...SEL, opacity: unlocked ? 1 : 0.6 }}>
                   <option value="">— N/A —</option>
                   {["Not Started", "In Progress", "In Review", "Approved"].map(s => <option key={s}>{s}</option>)}
                 </select>
@@ -441,16 +497,44 @@ export default function FloorMap() {
                     <div style={{ fontSize: 9, color: "#484f58", fontFamily: "'DM Mono', monospace" }}>{eq.id} · {eq.status}</div>
                   </div>
                 ))}
-                <div style={{ display: "flex", gap: 3, marginTop: 6 }}>
-                  <input id="eq-inp" placeholder="Equipment name" style={{ ...INP, flex: 1 }} onKeyDown={e => { if (e.key === "Enter" && e.target.value) { addEquipment(selLoc.id, e.target.value); e.target.value = ""; } }} />
-                  <button onClick={() => { const i = document.getElementById("eq-inp"); if (i.value) { addEquipment(selLoc.id, i.value); i.value = ""; } }} style={{ ...B, background: "#238636", color: "#fff", border: "1px solid #2ea043", padding: "4px 8px" }}>+</button>
-                </div>
+                {unlocked && (
+                  <div style={{ display: "flex", gap: 3, marginTop: 6 }}>
+                    <input id="eq-inp" placeholder="Equipment name" style={{ ...INP, flex: 1 }} onKeyDown={e => { if (e.key === "Enter" && e.target.value) { addEquipment(selLoc.id, e.target.value); e.target.value = ""; } }} />
+                    <button onClick={() => { const i = document.getElementById("eq-inp"); if (i.value) { addEquipment(selLoc.id, i.value); i.value = ""; } }} style={{ ...B, background: "#238636", color: "#fff", border: "1px solid #2ea043", padding: "4px 8px" }}>+</button>
+                  </div>
+                )}
               </div>
-              <button onClick={() => clearLocation(selLoc.id)} style={{ ...B, background: "#21262d", color: "#f85149", border: "1px solid #f8514933", width: "100%", marginTop: 6, padding: "7px 0" }}>Remove Location</button>
+              {unlocked && <button onClick={() => clearLocation(selLoc.id)} style={{ ...B, background: "#21262d", color: "#f85149", border: "1px solid #f8514933", width: "100%", marginTop: 6, padding: "7px 0" }}>Remove Location</button>}
             </div>
           </div>
         )}
       </div>
+
+      {/* Password Prompt Modal */}
+      {showPasswordPrompt && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999 }}
+          onClick={() => setShowPasswordPrompt(false)}>
+          <div style={{ background: "#161b22", border: "1px solid #30363d", borderRadius: 8, padding: 24, width: 320 }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#e6edf3", marginBottom: 4 }}>🔐 Edit Mode</div>
+            <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 16 }}>Enter the password to enable editing.</div>
+            <input
+              type="password"
+              value={passwordInput}
+              onChange={e => { setPasswordInput(e.target.value); setPasswordError(false); }}
+              onKeyDown={e => { if (e.key === "Enter") submitPassword(); }}
+              placeholder="Password"
+              autoFocus
+              style={{ ...INP, marginBottom: 8, borderColor: passwordError ? "#f85149" : "#30363d" }}
+            />
+            {passwordError && <div style={{ fontSize: 11, color: "#f85149", marginBottom: 8 }}>Incorrect password.</div>}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setShowPasswordPrompt(false)} style={{ ...B, background: "#21262d", color: "#8b949e", border: "1px solid #30363d", flex: 1, padding: "8px 0" }}>Cancel</button>
+              <button onClick={submitPassword} style={{ ...B, background: "#238636", color: "#fff", border: "1px solid #2ea043", flex: 1, padding: "8px 0" }}>Unlock</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
